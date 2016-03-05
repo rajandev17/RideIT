@@ -1,16 +1,15 @@
 package com.rajanks.rideit.UI;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
+import android.app.Activity;
+import android.content.Context;
 import android.hardware.Camera;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Environment;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -18,10 +17,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.location.LocationServices;
 import com.rajanks.rideit.R;
 import com.rajanks.rideit.Utils.Util;
 
@@ -38,20 +33,17 @@ import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class MainActivity extends AppCompatActivity implements GoogleApiClient.ConnectionCallbacks,
-        GoogleApiClient.OnConnectionFailedListener {
 
-    private static final int MY_PERMISSIONS_REQUEST_ACCESS_LOCATION = 1629 ;
+public class MainActivity extends Activity implements LocationListener {
+
     Button rideIT;
     private Timer selfieTimer;
     private static String ride_folder_path = "";
     SurfaceView preview;
     SurfaceHolder holder;
-    private GoogleApiClient mGoogleApiClient;
-    private final static int PLAY_SERVICES_RESOLUTION_REQUEST = 1000;
-    private Location mLastLocation;
     private double currentLatitude;
     private double currentLongitude;
+    protected LocationManager locationManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,11 +56,8 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         preview = (SurfaceView) findViewById(R.id.surface_view);
         holder = preview.getHolder();
 
-        //Prompt to enable Enable GPS
-        Util.checkAndEnableGPS(this);
-        if (checkPlayServices()) {
-            buildGoogleApiClient();
-        }
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, this);
 
         rideIT.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -90,124 +79,46 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
         });
     }
 
-    /**
-     * Method to display the location on UI
-     * */
-    private void updateLocation() {
-        if (ContextCompat.checkSelfPermission(MainActivity.this,
-                Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            // Should we show an explanation?
-            if (ActivityCompat.shouldShowRequestPermissionRationale(MainActivity.this,
-                    Manifest.permission.ACCESS_FINE_LOCATION)) {
-                // Show an expanation to the user *asynchronously* -- don't block
-                // this thread waiting for the user's response! After the user
-                // sees the explanation, try again to request the permission.
-            } else {
-
-                // No explanation needed, we can request the permission.
-                ActivityCompat.requestPermissions(MainActivity.this,
-                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                        MY_PERMISSIONS_REQUEST_ACCESS_LOCATION);
-
-                // MY_PERMISSIONS_REQUEST_ACCESS_LOCATION is an
-                // app-defined int constant. The callback method gets the
-                // result of the request.
-            }
-        }
-            mLastLocation = LocationServices.FusedLocationApi
-                    .getLastLocation(mGoogleApiClient);
-
-        if (mLastLocation != null) {
-            currentLatitude = mLastLocation.getLatitude();
-            currentLongitude = mLastLocation.getLongitude();
-        }
-    }
-
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           String permissions[], int[] grantResults) {
-        switch (requestCode) {
-            case MY_PERMISSIONS_REQUEST_ACCESS_LOCATION: {
-                // If request is cancelled, the result arrays are empty.
-                if (grantResults.length > 0
-                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    updateLocation();
-                } else {
-                    this.finish();
-                }
-                return;
-            }
-
-            // other 'case' lines to check for other
-            // permissions this app might request
-        }
-    }
-
 
     /**
-     * Creating google api client object
-     * */
-    protected synchronized void buildGoogleApiClient() {
-        mGoogleApiClient = new GoogleApiClient.Builder(this)
-                .addConnectionCallbacks(this)
-                .addOnConnectionFailedListener(this)
-                .addApi(LocationServices.API).build();
-    }
-
-    /**
-     * Method to verify google play services on the device
-     * */
-    @SuppressWarnings("deprecation")
-    private boolean checkPlayServices() {
-        int resultCode = GooglePlayServicesUtil
-                .isGooglePlayServicesAvailable(this);
-        if (resultCode != ConnectionResult.SUCCESS) {
-            if (GooglePlayServicesUtil.isUserRecoverableError(resultCode)) {
-                GooglePlayServicesUtil.getErrorDialog(resultCode, this,
-                        PLAY_SERVICES_RESOLUTION_REQUEST).show();
-            } else {
-                finish();
-            }
-            return false;
-        }
-        return true;
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        if (mGoogleApiClient != null) {
-            mGoogleApiClient.connect();
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-
-        checkPlayServices();
-    }
-
-    /**
-     * Google api callback methods
+     * @return the last know best location
      */
-    @Override
-    public void onConnectionFailed(ConnectionResult result) {
-
+    private Location getLastBestLocation() {
+        Location locationGPS = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        Location locationNet = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+        long GPSLocationTime = 0;
+        if (null != locationGPS) { GPSLocationTime = locationGPS.getTime(); }
+        long NetLocationTime = 0;
+        if (null != locationNet) {
+            NetLocationTime = locationNet.getTime();
+        }
+        if ( 0 < GPSLocationTime - NetLocationTime ) {
+            return locationGPS;
+        }
+        else {
+            return locationNet;
+        }
     }
 
     @Override
-    public void onConnected(Bundle arg0) {
-        updateLocation();
-        Util.showLongToast(this, "fetching location");
-        Util.showLongToast(this, "lat - " + currentLatitude + "long - " + currentLongitude);
+    public void onLocationChanged(Location location) {
+       currentLatitude = location.getLatitude();
+       currentLongitude = location.getLongitude();
     }
 
     @Override
-    public void onConnectionSuspended(int arg0) {
-        mGoogleApiClient.connect();
+    public void onProviderDisabled(String provider) {
+        Log.d("Latitude","disable");
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+        Log.d("Latitude", "enable");
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+        Log.d("Latitude", "status");
     }
 
 
@@ -232,7 +143,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             File ride_details = new File(ride_folder_path, "RideDetails.txt");
             FileWriter writer = new FileWriter(ride_details);
             String start = getAddress();
-            updateLocation();
+            if(currentLongitude == 0 && currentLatitude == 0 ){
+                currentLongitude = getLastBestLocation().getLongitude();
+                currentLatitude = getLastBestLocation().getLatitude();
+            }
             String time = new SimpleDateFormat("hh:mm a' on 'dd-MMM-yyyy'.'").format(new Date());
             String file_content = "\n*****************************************************\n\n" +
                     "\t# Ride Started at " + time + "\n" +
@@ -252,7 +166,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
             FileWriter textFileWriter = new FileWriter(ride_details, true);
             BufferedWriter out = new BufferedWriter(textFileWriter);
             String end = getAddress();
-            updateLocation();
+            if(currentLongitude == 0 && currentLatitude == 0 ){
+                currentLongitude = getLastBestLocation().getLongitude();
+                currentLatitude = getLastBestLocation().getLatitude();
+            }
             String time = new SimpleDateFormat("hh:mm a' on 'dd-MMM-yyyy'.'").format(new Date());
             String file_content = "\n*****************************************************\n\n" +
                     "\t# Ride Ended at " + time + "\n" +
@@ -337,7 +254,10 @@ public class MainActivity extends AppCompatActivity implements GoogleApiClient.C
     private void saveTakenSelfie(byte[] imagedata) {
         try {
             String imageName = "default";
-            updateLocation();
+            if(currentLongitude == 0 && currentLatitude == 0 ){
+                currentLongitude = getLastBestLocation().getLongitude();
+                currentLatitude = getLastBestLocation().getLatitude();
+            }
             imageName = getFormattedLocationInDegree(currentLatitude, currentLongitude);
             String path = ride_folder_path + "/" + imageName + ".jpg";
             FileOutputStream stream = new FileOutputStream(path);
