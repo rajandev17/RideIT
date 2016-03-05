@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white"
+    tools:context=".UI.MainActivity">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:layout_centerInParent="true"
+        android:textColor="@color/colorPrimary"
+        android:textSize="70dp"
+        android:shadowDx="2"
+        android:shadowDy="1"
+        android:shadowColor="@android:color/darker_gray"
+        android:shadowRadius="2"
+        android:id="@+id/tv_title_main"
+        />
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="20dp"
+        android:padding="5dp"
+        android:layout_alignParentBottom="true"
+        android:text="@string/ride_text"
+        android:textColor="@android:color/white"
+        android:background="@color/start"
+        android:id="@+id/btn_ride_txt"
+        android:tag="OFF"
+        android:textAlignment="center"
+        />
+    <SurfaceView
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:id="@+id/surface_view"/>
+</RelativeLayout>

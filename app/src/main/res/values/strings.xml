@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">RideIt</string>
+    <string name="ride_text">LET\'S GO</string>
+    <string name="ride_text_off">END RIDE</string>
+</resources>
