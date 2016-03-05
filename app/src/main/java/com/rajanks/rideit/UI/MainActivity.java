@@ -1,30 +1,32 @@
 package com.rajanks.rideit.UI;
 
-import android.content.Context;
-import android.graphics.PixelFormat;
+import android.content.IntentSender;
+import android.content.pm.PackageManager;
 import android.hardware.Camera;
-import android.hardware.camera2.CameraAccessException;
-import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
 import android.location.Address;
 import android.location.Geocoder;
-import android.os.Environment;
-import android.support.v7.app.AppCompatActivity;
+import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.v4.content.ContextCompat;
+import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.LocationListener;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
 import com.rajanks.rideit.R;
-import com.rajanks.rideit.Utils.GPSTracker;
 import com.rajanks.rideit.Utils.Util;
 
 import java.io.BufferedWriter;
-import java.io.Console;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -37,14 +39,22 @@ import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements
+        GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener,
+        LocationListener {
 
     Button rideIT;
     private Timer selfieTimer;
     private static String ride_folder_path = "";
-    GPSTracker gpsTracker;
     SurfaceView preview;
     SurfaceHolder holder;
+    private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+    private GoogleApiClient mGoogleApiClient;
+    private LocationRequest mLocationRequest;
+    private double currentLatitude;
+    private double currentLongitude;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -52,17 +62,30 @@ public class MainActivity extends AppCompatActivity {
         rideIT = (Button) findViewById(R.id.btn_ride_txt);
         ((TextView) findViewById(R.id.tv_title_main)).setTypeface(Util.getFontWithName(this, "head"));
 
-
         //setup camera
         preview = (SurfaceView) findViewById(R.id.surface_view);
         holder = preview.getHolder();
 
+        mGoogleApiClient = new GoogleApiClient.Builder(this)
+                // The next two lines tell the new client that “this” current class will handle connection stuff
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                        //fourth line adds the LocationServices API endpoint from GooglePlayServices
+                .addApi(LocationServices.API)
+                .build();
+
+        // Create the LocationRequest object
+        mLocationRequest = LocationRequest.create()
+                .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                .setInterval(10 * 1000)        // 10 seconds, in milliseconds
+                .setFastestInterval(1 * 1000); // 1 second, in milliseconds
+
         //Prompt to enable Enable GPS
         //Close app if user rejects to turn on GPS
-        gpsTracker = new GPSTracker(this);
-        if (!gpsTracker.canGetLocation()) {
-            gpsTracker.showSettingsAlert();
-        }
+        Util.checkAndEnableGPS(this);
+        Util.showLongToast(this, "fetching location");
+        Util.showLongToast(this, "lat - " + currentLatitude + "long - " + currentLongitude);
+
 
         rideIT.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -106,15 +129,10 @@ public class MainActivity extends AppCompatActivity {
             FileWriter writer = new FileWriter(ride_details);
             String start = getAddress();
             String time = new SimpleDateFormat("hh:mm a' on 'dd-MMM-yyyy'.'").format(new Date());
-            double latitude = 0.0, longitude = 0.0;
-            if (gpsTracker.canGetLocation()) {
-                latitude = gpsTracker.getLatitude();
-                longitude = gpsTracker.getLongitude();
-            }
             String file_content = "\n*****************************************************\n\n" +
                     "\t# Ride Started at " + time + "\n" +
                     "\t# Start Address\n" + start +
-                    "\t# GeoLocation\n\t\tLatitude - " + latitude + "\n\t\tLongitude - " + longitude + "\n";
+                    "\t# GeoLocation\n\t\tLatitude - " + currentLatitude + "\n\t\tLongitude - " + currentLongitude + "\n";
             writer.write(file_content);
             writer.flush();
             writer.close();
@@ -130,15 +148,10 @@ public class MainActivity extends AppCompatActivity {
             BufferedWriter out = new BufferedWriter(textFileWriter);
             String end = getAddress();
             String time = new SimpleDateFormat("hh:mm a' on 'dd-MMM-yyyy'.'").format(new Date());
-            double latitude = 0.0, longitude = 0.0;
-            if (gpsTracker.canGetLocation()) {
-                latitude = gpsTracker.getLatitude();
-                longitude = gpsTracker.getLongitude();
-            }
             String file_content = "\n*****************************************************\n\n" +
                     "\t# Ride Ended at " + time + "\n" +
                     "\t# End Address\n" + end +
-                    "\t# GeoLocation\n\t\tLatitude - " + latitude + "\n\t\tLongitude - " + longitude + "\n" +
+                    "\t# GeoLocation\n\t\tLatitude - " + currentLatitude + "\n\t\tLongitude - " + currentLongitude + "\n" +
                     "\n*****************************************************";
             out.write(file_content);
             out.close();
@@ -191,39 +204,34 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressWarnings("deprecation")
     public void CaptureSelfieAndSave() {
-       Log.d("rideit", "taking selfie");
-                Camera camera = null;
-                try {
-                    camera = openFrontCamera();
-                    try {
-                        camera.setPreviewDisplay(holder);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                    camera.startPreview();
-                    camera.takePicture(null, null, new Camera.PictureCallback() {
-                        @Override
-                        public void onPictureTaken(byte[] data, Camera camera) {
-                            camera.release();
-                            Log.d("rideit","Taken selfie");
-                            saveTakenSelfie(data);
-                        }
-                    });
-                } catch (Exception e) {
-                    if (camera != null)
-                        camera.release();
-                }
+        Log.d("rideit", "taking selfie");
+        Camera camera = null;
+        try {
+            camera = openFrontCamera();
+            try {
+                camera.setPreviewDisplay(holder);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
             }
+            camera.startPreview();
+            camera.takePicture(null, null, new Camera.PictureCallback() {
+                @Override
+                public void onPictureTaken(byte[] data, Camera camera) {
+                    camera.release();
+                    Log.d("rideit", "Taken selfie");
+                    saveTakenSelfie(data);
+                }
+            });
+        } catch (Exception e) {
+            if (camera != null)
+                camera.release();
+        }
+    }
 
     private void saveTakenSelfie(byte[] imagedata) {
         try {
             String imageName = "default";
-            double latitude = 0.0, longitude = 0.0;
-            if (gpsTracker.canGetLocation()) {
-                latitude = gpsTracker.getLatitude();
-                longitude = gpsTracker.getLongitude();
-            }
-            imageName = getFormattedLocationInDegree(latitude,longitude);
+            imageName = getFormattedLocationInDegree(currentLatitude, currentLongitude);
             String path = ride_folder_path + "/" + imageName + ".jpg";
             FileOutputStream stream = new FileOutputStream(path);
             stream.write(imagedata);
@@ -252,28 +260,23 @@ public class MainActivity extends AppCompatActivity {
             String latDegree = latDegrees >= 0 ? "N" : "S";
             String lonDegrees = latDegrees >= 0 ? "E" : "W";
 
-            return  Math.abs(latDegrees) + "°" + latMinutes + "'" + latSeconds
-                    + "\"" + latDegree +" "+ Math.abs(longDegrees) + "°" + longMinutes
+            return Math.abs(latDegrees) + "°" + latMinutes + "'" + latSeconds
+                    + "\"" + latDegree + " " + Math.abs(longDegrees) + "°" + longMinutes
                     + "'" + longSeconds + "\"" + lonDegrees;
         } catch (Exception e) {
 
-            return ""+ String.format("%8.5f", latitude) + "  "
-                    + String.format("%8.5f", longitude) ;
+            return "" + String.format("%8.5f", latitude) + "  "
+                    + String.format("%8.5f", longitude);
         }
     }
 
     public String getAddress() {
         String completeAddress = "";
         Geocoder geocoder;
-        double latitude = 0.0, longitude = 0.0;
         List<Address> addresses;
         geocoder = new Geocoder(this, Locale.getDefault());
-        if (gpsTracker.canGetLocation()) {
-            latitude = gpsTracker.getLatitude();
-            longitude = gpsTracker.getLongitude();
-        }
         try {
-            addresses = geocoder.getFromLocation(latitude, longitude, 1);
+            addresses = geocoder.getFromLocation(currentLatitude, currentLongitude, 1);
             if (addresses.size() > 0) {
                 String address = addresses.get(0).getAddressLine(0).length() > 0 ? "\t\t\t" + addresses.get(0).getAddressLine(0) + ",\n" : "";
                 String city = addresses.get(0).getLocality().length() > 0 ? "\t\t\t" + addresses.get(0).getLocality() + "," : "";
@@ -286,5 +289,93 @@ public class MainActivity extends AppCompatActivity {
         }
         return completeAddress;
     }
+
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        //Now lets connect to the API
+        mGoogleApiClient.connect();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.v(this.getClass().getSimpleName(), "onPause()");
+
+        //Disconnect from API onPause()
+        if (mGoogleApiClient.isConnected()) {
+            LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
+            mGoogleApiClient.disconnect();
+        }
+
+
+    }
+
+    /**
+     * If connected get lat and long
+     */
+    @Override
+    public void onConnected(Bundle bundle) {
+        if ( Build.VERSION.SDK_INT >= 23 &&
+                ContextCompat.checkSelfPermission( this, android.Manifest.permission.ACCESS_FINE_LOCATION ) != PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return  ;
+        }
+        Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        if (location == null) {
+            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+        } else {
+            //If everything went fine lets get latitude and longitude
+            currentLatitude = location.getLatitude();
+            currentLongitude = location.getLongitude();
+        }
+    }
+
+
+    @Override
+    public void onConnectionSuspended(int i) {
+    }
+
+    @Override
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+            /*
+             * Google Play services can resolve some errors it detects.
+             * If the error has a resolution, try sending an Intent to
+             * start a Google Play services activity that can resolve
+             * error.
+             */
+        if (connectionResult.hasResolution()) {
+            try {
+                // Start an Activity that tries to resolve the error
+                connectionResult.startResolutionForResult(this, CONNECTION_FAILURE_RESOLUTION_REQUEST);
+                    /*
+                     * Thrown if Google Play services canceled the original
+                     * PendingIntent
+                     */
+            } catch (IntentSender.SendIntentException e) {
+                // Log the error
+                e.printStackTrace();
+            }
+        } else {
+                /*
+                 * If no resolution is available, display a dialog to the
+                 * user with the error.
+                 */
+            Log.e("Error", "Location services connection failed with code " + connectionResult.getErrorCode());
+        }
+    }
+
+    /**
+     * If locationChanges change lat and long
+     *
+     * @param location
+     */
+    @Override
+    public void onLocationChanged(Location location) {
+        currentLatitude = location.getLatitude();
+        currentLongitude = location.getLongitude();
+    }
+
 
 }
