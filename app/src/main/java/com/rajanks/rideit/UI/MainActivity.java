@@ -56,6 +56,7 @@ public class MainActivity extends Activity implements LocationListener {
         preview = (SurfaceView) findViewById(R.id.surface_view);
         holder = preview.getHolder();
 
+        //location details
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, this);
 
